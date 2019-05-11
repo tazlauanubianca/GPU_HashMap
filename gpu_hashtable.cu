@@ -36,21 +36,17 @@ GpuHashTable::GpuHashTable(int size) {
 	cudaMemset(hashTable.pairs, 0, size * sizeof(Pair));
 	cudaMemcpy(hashTable.size, &size, sizeof(int), cudaMemcpyHostToDevice);
 	
-	//printf("SIZE: %d\n", size);
 }
 
 void print_hash() {
-	printf("SE AFISEAZA HASHTABLE\n");
 
 	Pair *hostPairs;
 
 	int *hostNumElem = (int *)malloc(sizeof(int));
 	cudaMemcpy(hostNumElem, hashTable.numElem, sizeof(int), cudaMemcpyDeviceToHost);
-	printf("NUMAR DE ELEMENTE: %d\n", *hostNumElem);
 
 	int *hostSize = (int *)malloc(sizeof(int));
 	cudaMemcpy(hostSize, hashTable.size, sizeof(int), cudaMemcpyDeviceToHost);
-	printf("HASHTABLE SIZE: %d\n", *hostSize);
 
 
 	hostPairs = (Pair *)malloc (sizeof(Pair) * (*hostSize));
@@ -110,43 +106,6 @@ __global__ void resize(Pair *newPairs, Pair *oldPairs, int *size, int *numElem, 
 /* RESHAPE HASH
  */
 void GpuHashTable::reshape(int numBucketsReshape) {
-	//int hostNumElem;
-	//int hostOldSize;
-	//int *hostKeys, *hostValues;
-	//Pair *hostPairs;
-
-	//TODO: check the allocations
-	printf("\n");
-	printf("FAC RESHAPE CU %d\n", numBucketsReshape);
-
-	/* Get old size of hashTable */
-	//cudaMemcpy(&hostOldSize, hashTable.size, sizeof(int), cudaMemcpyDeviceToHost);
-
-	/* Get current number of elements */
-	//cudaMemcpy(&hostNumElem, hashTable.numElem, sizeof(int), cudaMemcpyDeviceToHost);
-
-	/* Get all pairs in hashTable */
-	//hostPairs = (Pair *) malloc(sizeof(Pair) * hostOldSize);
-	//cudaMemcpy(hostPairs, hashTable.pairs, sizeof(Pair) * hostOldSize, cudaMemcpyDeviceToHost);
-
-//	hostKeys = (int *) malloc(sizeof(int) * hostOldSize);
-//	hostValues = (int *) malloc(sizeof(int) * hostOldSize);
-
-	/* Filter pairs*/
-/*	int index = 0;
-	for (int i = 0; i < hostOldSize; i++) {
-		if (hostPairs[i].key != 0) {
-			hostKeys[index] = hostPairs[i].key;
-			hostValues[index] = hostPairs[i].value;
-			index++;
-		}
-	}
-*/	
-//	printf("test:\n");
-//	for (int i = 0; i < index; i++) {
-//		printf("key %d value %d\n", hostKeys[i], hostValues[i]);
-//	}
-
 	Pair *devicePairs;
 	int hostOldSize;
 	int *deviceOldSize;
@@ -154,8 +113,8 @@ void GpuHashTable::reshape(int numBucketsReshape) {
 	cudaMalloc(&deviceOldSize, sizeof(int));
 	cudaMalloc(&devicePairs, numBucketsReshape * sizeof(Pair));
 
-	cudaMemcpy(deviceOldSize, hashTable.size, sizeof(int), cudaMemcpyHostToHost);
-	cudaMemcpy(&hostOldSize, hashTable.size, sizeof(int), cudaMemcpyHostToHost);
+	cudaMemcpy(deviceOldSize, hashTable.size, sizeof(int), cudaMemcpyDeviceToDevice);
+	cudaMemcpy(&hostOldSize, hashTable.size, sizeof(int), cudaMemcpyDeviceToHost);
 
 	cudaMemset(hashTable.numElem, 0, sizeof(int));
 	cudaMemcpy(hashTable.size, &numBucketsReshape, sizeof(int), cudaMemcpyHostToDevice);	
@@ -181,7 +140,6 @@ void GpuHashTable::reshape(int numBucketsReshape) {
 //	free(hostValues);
 //	free(hostKeys);
 
-	printf("\n");
 }
 
 __global__ void insert(int *keys, int *values, Pair *pairs, int *size,
@@ -240,11 +198,9 @@ bool GpuHashTable::insertBatch(int *keys, int* values, int numKeys) {
 
 	int *hostNumElem = (int *)malloc(sizeof(int));
 	cudaMemcpy(hostNumElem, hashTable.numElem, sizeof(int), cudaMemcpyDeviceToHost);
-//	printf("NUMAR DE ELEMENTE: %d\n", *hostNumElem);
 
 	int *hostSize = (int *)malloc(sizeof(int));
 	cudaMemcpy(hostSize, hashTable.size, sizeof(int), cudaMemcpyDeviceToHost);
-//	printf("HASHTABLE SIZE: %d\n", *hostSize);
 
 	int oldSize = (*hostSize);
 	while ((numKeys + (*hostNumElem)) > (*hostSize)) {
@@ -287,9 +243,6 @@ bool GpuHashTable::insertBatch(int *keys, int* values, int numKeys) {
 	cudaFree(deviceValues);
 	free(hostResult);
 
-//	printf("\n");
-//	print_hash();
-//	printf("\n");
 
 	return returnValue;
 }
