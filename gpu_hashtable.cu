@@ -10,7 +10,6 @@
 #define BLOCKSIZE 1024
 #define BLOCKNUM 1
 #define A 113
-#define B 
 
 typedef struct {
 	int state; // 0 -> unoccupied | 1 -> occupied | -1 -> was previously
@@ -36,6 +35,34 @@ GpuHashTable::GpuHashTable(int size) {
 	cudaMemset(hashTable.numElem, 0, sizeof(int));
 	cudaMemset(hashTable.pairs, 0, size * sizeof(Pair));
 	cudaMemcpy(hashTable.size, &size, sizeof(int), cudaMemcpyHostToDevice);
+	
+	//printf("SIZE: %d\n", size);
+}
+
+void print_hash() {
+	printf("SE AFISEAZA HASHTABLE\n");
+
+	Pair *hostPairs;
+
+	int *hostNumElem = (int *)malloc(sizeof(int));
+	cudaMemcpy(hostNumElem, hashTable.numElem, sizeof(int), cudaMemcpyDeviceToHost);
+	printf("NUMAR DE ELEMENTE: %d\n", *hostNumElem);
+
+	int *hostSize = (int *)malloc(sizeof(int));
+	cudaMemcpy(hostSize, hashTable.size, sizeof(int), cudaMemcpyDeviceToHost);
+	printf("HASHTABLE SIZE: %d\n", *hostSize);
+
+
+	hostPairs = (Pair *)malloc (sizeof(Pair) * (*hostSize));
+
+	cudaMemcpy(hostPairs, hashTable.pairs, sizeof(Pair) * (*hostSize), cudaMemcpyDeviceToHost);
+	for (int i = 0; i < (*hostSize); i++) {
+	//	if (hostPairs[i].key != 0) {
+			printf("%d. Key: %d Value: %d \n", i, hostPairs[i].key, hostPairs[i].value);
+	//	}
+	}
+
+	printf("\n");
 }
 
 /* DESTROY HASH
@@ -46,52 +73,115 @@ GpuHashTable::~GpuHashTable() {
 	cudaFree(hashTable.numElem);
 }
 
+__global__ void resize(Pair *newPairs, Pair *oldPairs, int *size, int *numElem, int *oldSize) {
+	int keyToInsert = blockIdx.x * blockDim.x + threadIdx.x;
+	if (keyToInsert >= *oldSize)
+		return;
+
+	int key = oldPairs[keyToInsert].key;
+	if (key == 0)
+		return;
+
+	int position = hash1(key, *size);
+	int index = position;
+	int free = 0;
+	/*
+	while(1) {
+		//if (pairs[index].key == key) 
+		//	break;
+
+		if (atomicCAS(&(pairs[index].key), free, key) == 0) {
+			atomicAdd(result, 1);
+			atomicAdd(numElem, 1);
+			break;
+		} */
+	while (atomicCAS(&(newPairs[index].key), free, key) != 0) {
+		index++;
+		if (index == (*size))
+			index = 0;
+	}
+	
+	atomicAdd(numElem, 1);
+	
+	newPairs[index].value = oldPairs[keyToInsert].value;
+}
+
+
 /* RESHAPE HASH
  */
 void GpuHashTable::reshape(int numBucketsReshape) {
-	Pair *devicePairs;
-	int hostNumElem;
-	int hostOldSize;
-	int *hostKeys, *hostValues;
-	Pair *hostPairs;
-	
+	//int hostNumElem;
+	//int hostOldSize;
+	//int *hostKeys, *hostValues;
+	//Pair *hostPairs;
+
 	//TODO: check the allocations
+	printf("\n");
+	printf("FAC RESHAPE CU %d\n", numBucketsReshape);
 
 	/* Get old size of hashTable */
-	cudaMemcpy(&hostOldSize, hashTable.size, sizeof(int), cudaMemcpyDeviceToHost);
+	//cudaMemcpy(&hostOldSize, hashTable.size, sizeof(int), cudaMemcpyDeviceToHost);
 
 	/* Get current number of elements */
-	cudaMemcpy(&hostNumElem, hashTable.numElem, sizeof(int), cudaMemcpyDeviceToHost);
+	//cudaMemcpy(&hostNumElem, hashTable.numElem, sizeof(int), cudaMemcpyDeviceToHost);
 
 	/* Get all pairs in hashTable */
-	hostPairs = (Pair *) malloc(sizeof(Pair) * hostOldSize);
-	cudaMemcpy(hostPairs, hashTable.pairs, sizeof(Pair) * hostOldSize, cudaMemcpyDeviceToHost);
+	//hostPairs = (Pair *) malloc(sizeof(Pair) * hostOldSize);
+	//cudaMemcpy(hostPairs, hashTable.pairs, sizeof(Pair) * hostOldSize, cudaMemcpyDeviceToHost);
 
-	hostKeys = (int *) malloc(sizeof(int) * hostOldSize);
-	hostValues = (int *) malloc(sizeof(int) * hostOldSize);
+//	hostKeys = (int *) malloc(sizeof(int) * hostOldSize);
+//	hostValues = (int *) malloc(sizeof(int) * hostOldSize);
 
 	/* Filter pairs*/
-	int index = 0;
+/*	int index = 0;
 	for (int i = 0; i < hostOldSize; i++) {
-		if (hostPairs[i].state == 1) {
+		if (hostPairs[i].key != 0) {
 			hostKeys[index] = hostPairs[i].key;
 			hostValues[index] = hostPairs[i].value;
 			index++;
 		}
 	}
+*/	
+//	printf("test:\n");
+//	for (int i = 0; i < index; i++) {
+//		printf("key %d value %d\n", hostKeys[i], hostValues[i]);
+//	}
 
+	Pair *devicePairs;
+	int hostOldSize;
+	int *deviceOldSize;
+
+	cudaMalloc(&deviceOldSize, sizeof(int));
 	cudaMalloc(&devicePairs, numBucketsReshape * sizeof(Pair));
+
+	cudaMemcpy(deviceOldSize, hashTable.size, sizeof(int), cudaMemcpyHostToHost);
+	cudaMemcpy(&hostOldSize, hashTable.size, sizeof(int), cudaMemcpyHostToHost);
+
 	cudaMemset(hashTable.numElem, 0, sizeof(int));
-	cudaMemcpy(hashTable.size, &numBucketsReshape, sizeof(int), cudaMemcpyHostToDevice);
-	cudaFree(hashTable.pairs);
+	cudaMemcpy(hashTable.size, &numBucketsReshape, sizeof(int), cudaMemcpyHostToDevice);	
+
+	int blockNum = hostOldSize / BLOCKSIZE;
+	if (blockNum * BLOCKSIZE < hostOldSize)
+		blockNum++;
+
+	resize<<<blockNum, BLOCKSIZE>>>(devicePairs, hashTable.pairs,
+			hashTable.size, hashTable.numElem, deviceOldSize);
 	
+	cudaDeviceSynchronize();
+
+	cudaFree(hashTable.pairs);
 	hashTable.pairs = devicePairs;
 
-	insertBatch(hostKeys, hostValues, hostNumElem);
+	//hashTable.pairs = devicePairs;
 
-	free(hostPairs);
-	free(hostValues);
-	free(hostKeys);
+//	insertBatch(hostKeys, hostValues, hostNumElem);
+
+//	print_hash();
+//	free(hostPairs);
+//	free(hostValues);
+//	free(hostKeys);
+
+	printf("\n");
 }
 
 __global__ void insert(int *keys, int *values, Pair *pairs, int *size,
@@ -101,28 +191,44 @@ __global__ void insert(int *keys, int *values, Pair *pairs, int *size,
 	if (keyToInsert >= numKeys)
 		return;
 
-	int position = keys[keyToInsert] * A % (*size);
+	if (keys[keyToInsert] <= 0 || values[keyToInsert] <= 0)
+		return;
+
+//	int position = keys[keyToInsert] * A % (*size);
+	int position = hash1(keys[keyToInsert], *size);
+	int key = keys[keyToInsert];
 	int index = position;
-	int prevOccupied = -1;
 	int free = 0;
-	int occupied = 1;
 
 	/* Check for an empty space in the HashTable */
-	while ((atomicCAS(&(pairs[index].state), prevOccupied, occupied) != -1) &&
-		(atomicCAS(&(pairs[index].state), free, occupied) != 0)) {
+	/*while ((atomicCAS(&(pairs[index].key), free, key) != 0) &&
+		(atomicCAS(&(pairs[index].key), key, key) != key)) {
 		index++;
 		if (index == (*size))
 			index = 0;
+	}  */
+	while(1) {
+	//	if (atomicCAS(&(pairs[index].key, key, key) == key))
+	//		break;
+		if (pairs[index].key == key) 
+			break;
 
-		if (index == position)
-			return;
+		if (atomicCAS(&(pairs[index].key), free, key) == 0) {
+			atomicAdd(result, 1);
+			atomicAdd(numElem, 1);
+			break;
+		}
+
+		index++;
+		if (index == (*size))
+			index = 0;
 	}
-
-	pairs[position].key = keys[keyToInsert];
-	pairs[position].value = values[keyToInsert];
-
-	atomicAdd(result, 1);
-	atomicAdd(numElem, 1);
+	
+	//atomicAdd(result, 1);
+	//atomicAdd(numElem, 1);
+		
+	//pairs[index].key = keys[keyToInsert];
+	pairs[index].value = values[keyToInsert];
 }
 
 /* INSERT BATCH
@@ -131,7 +237,30 @@ bool GpuHashTable::insertBatch(int *keys, int* values, int numKeys) {
 	int *deviceResult, *deviceKeys, *deviceValues;
 	int *hostResult;
 	bool returnValue = false;
-	
+
+	int *hostNumElem = (int *)malloc(sizeof(int));
+	cudaMemcpy(hostNumElem, hashTable.numElem, sizeof(int), cudaMemcpyDeviceToHost);
+//	printf("NUMAR DE ELEMENTE: %d\n", *hostNumElem);
+
+	int *hostSize = (int *)malloc(sizeof(int));
+	cudaMemcpy(hostSize, hashTable.size, sizeof(int), cudaMemcpyDeviceToHost);
+//	printf("HASHTABLE SIZE: %d\n", *hostSize);
+
+	int oldSize = (*hostSize);
+	while ((numKeys + (*hostNumElem)) > (*hostSize)) {
+		(*hostSize) *= 2;
+	}
+
+	if ((*hostNumElem) + numKeys > 0) { 
+		if ((((float)((*hostNumElem) + numKeys) / (*hostSize)) > 0.8f) 
+			&& ((*hostSize) * 2 < 0x01111111)) {
+			(*hostSize) *= 2;
+		}
+	}
+
+	if (oldSize != (*hostSize))
+		reshape((*hostSize));
+
 	//TODO: check the allocations
 	hostResult = (int *) malloc(sizeof(int));
 	*hostResult = 0;
@@ -143,21 +272,24 @@ bool GpuHashTable::insertBatch(int *keys, int* values, int numKeys) {
 	cudaMemcpy(deviceKeys, keys, numKeys * sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(deviceValues, values, numKeys * sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(deviceResult, hostResult, sizeof(int), cudaMemcpyHostToDevice);
+
+	int blockNum = numKeys / BLOCKSIZE;
+	if (blockNum * BLOCKSIZE < numKeys)
+		blockNum++;
 	
-	insert<<<BLOCKNUM, BLOCKSIZE>>>(deviceKeys, deviceValues, hashTable.pairs, 
+	insert<<<blockNum, BLOCKSIZE>>>(deviceKeys, deviceValues, hashTable.pairs, 
 					hashTable.size, hashTable.numElem, deviceResult, numKeys);
 	
 	cudaDeviceSynchronize();
-	cudaMemcpy(hostResult, deviceResult, sizeof(int), cudaMemcpyDeviceToHost);
-	
-	/* Check for result */
-	if (*hostResult == numKeys)
-		returnValue = true;
 
 	cudaFree(deviceResult);
 	cudaFree(deviceKeys);
 	cudaFree(deviceValues);
 	free(hostResult);
+
+//	printf("\n");
+//	print_hash();
+//	printf("\n");
 
 	return returnValue;
 }
@@ -168,18 +300,24 @@ __global__ void get(int *keys, int *values, Pair *pairs, int *size, int numKeys)
 	if (keyToGet >= numKeys)
 		return;
 
-	int position = keys[keyToGet] * A % (*size);
+	int position = hash1(keys[keyToGet], *size);
+	//int position = keys[keyToGet] * A % (*size);
 	int key = keys[keyToGet];
 	int index = position;
+	int free = 0;
+	int round = 0;
 
 	/* Check for an empty space in the HashTable */
-	while (atomicCAS(&(pairs[index].key), key, key) != key) {
+	while ((atomicCAS(&(pairs[index].key), key, key) != key) &&
+		(atomicCAS(&(pairs[index].key), free, free) != free)) {
 		index++;
 		if (index == (*size))
 			index = 0;
 
-		if (index == position)
+		if ((index == position) && (round == 1))
 			return;
+
+		round = 1;
 	}
 
 	values[keyToGet] = pairs[index].value;
@@ -197,8 +335,12 @@ int* GpuHashTable::getBatch(int* keys, int numKeys) {
 	cudaMalloc(&deviceKeys, numKeys * sizeof(int));
 	cudaMalloc(&deviceValues, numKeys * sizeof(int));
 	cudaMemcpy(deviceKeys, keys, numKeys * sizeof(int), cudaMemcpyHostToDevice);
+		
+	int blockNum = numKeys / BLOCKSIZE;
+	if (blockNum * BLOCKSIZE < numKeys)
+		blockNum++;
 	
-	get<<<BLOCKNUM, BLOCKSIZE>>>(deviceKeys, deviceValues, hashTable.pairs, 
+	get<<<blockNum, BLOCKSIZE>>>(deviceKeys, deviceValues, hashTable.pairs, 
 					hashTable.size, numKeys);
 	
 	cudaDeviceSynchronize();
@@ -220,9 +362,9 @@ float GpuHashTable::loadFactor() {
 	cudaMemcpy(numElem, hashTable.numElem, sizeof(int), cudaMemcpyDeviceToHost);
 	cudaMemcpy(size, hashTable.size, sizeof(int), cudaMemcpyDeviceToHost);
 	
-	float loadFactor = *numElem / *size;
+	float loadFactor = (float) *numElem / *size;
 	
-	return loadFactor; // no larger than 1.0f = 100%
+	return (float)loadFactor; // no larger than 1.0f = 100%
 }
 
 /*********************************************************/

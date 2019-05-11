@@ -15,7 +15,7 @@ using namespace std;
 	}	\
 } while (0)
 	
-const size_t primeList[] =
+__device__ const size_t primeList[] =
 {
 	2llu, 3llu, 5llu, 7llu, 11llu, 13llu, 17llu, 23llu, 29llu, 37llu, 47llu,
 	59llu, 73llu, 97llu, 127llu, 151llu, 197llu, 251llu, 313llu, 397llu,
@@ -64,7 +64,7 @@ const size_t primeList[] =
 //
 // random hash functions, build your own
 //
-int hash1(int data, int limit) {
+__device__ int hash1(int data, int limit) {
 	return ((long)abs(data) * primeList[64]) % primeList[90] % limit;
 }
 int hash2(int data, int limit) {

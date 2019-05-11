@@ -80,6 +80,15 @@ int main(int argc, char **argv)
 		
 		begin = clock();
 		// insert stage
+
+		int *testK = keysStart;
+		int *testV = valuesStart;
+		printf("VREAU SA INSEREZ chunkSize: %d\n", chunkSize);
+		for (int k = 0; k < chunkSize; k++) {
+			printf("Inserez key: %d value: %d\n", 
+				testK[k], testV[k]);
+		}
+
 		HASH_BATCH_INSERT(keysStart, valuesStart, chunkSize);
 		elapsedTime = double(clock() - begin) / CLOCKS_PER_SEC;
 		
@@ -95,6 +104,7 @@ int main(int argc, char **argv)
 	}
 	int *keyPtr = &vecKeys[0];
 	int *vecPtr = &vecValues[0];
+	printf("INSEREZ ULTIMUL INSERT DE CHUNKSIZEUPDATE: %d\n", chunkSizeUpdate);
 	HASH_BATCH_INSERT(keyPtr, vecPtr, chunkSizeUpdate);
 	
 	// perform GET and test performance
@@ -104,6 +114,7 @@ int main(int argc, char **argv)
 
 		begin = clock();
 		// get stage
+		printf("SE FACE GET PE %d\n", chunkSize);
 		valuesGot = HASH_BATCH_GET(keysStart, chunkSize);
 		elapsedTime = double(clock() - begin) / CLOCKS_PER_SEC;
 		
