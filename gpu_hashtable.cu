@@ -38,29 +38,6 @@ GpuHashTable::GpuHashTable(int size) {
 	
 }
 
-void print_hash() {
-
-	Pair *hostPairs;
-
-	int *hostNumElem = (int *)malloc(sizeof(int));
-	cudaMemcpy(hostNumElem, hashTable.numElem, sizeof(int), cudaMemcpyDeviceToHost);
-
-	int *hostSize = (int *)malloc(sizeof(int));
-	cudaMemcpy(hostSize, hashTable.size, sizeof(int), cudaMemcpyDeviceToHost);
-
-
-	hostPairs = (Pair *)malloc (sizeof(Pair) * (*hostSize));
-
-	cudaMemcpy(hostPairs, hashTable.pairs, sizeof(Pair) * (*hostSize), cudaMemcpyDeviceToHost);
-	for (int i = 0; i < (*hostSize); i++) {
-	//	if (hostPairs[i].key != 0) {
-			printf("%d. Key: %d Value: %d \n", i, hostPairs[i].key, hostPairs[i].value);
-	//	}
-	}
-
-	printf("\n");
-}
-
 /* DESTROY HASH
  */
 GpuHashTable::~GpuHashTable() {
@@ -135,7 +112,6 @@ void GpuHashTable::reshape(int numBucketsReshape) {
 
 //	insertBatch(hostKeys, hostValues, hostNumElem);
 
-//	print_hash();
 //	free(hostPairs);
 //	free(hostValues);
 //	free(hostKeys);
@@ -209,7 +185,7 @@ bool GpuHashTable::insertBatch(int *keys, int* values, int numKeys) {
 
 	if ((*hostNumElem) + numKeys > 0) { 
 		if ((((float)((*hostNumElem) + numKeys) / (*hostSize)) > 0.8f) 
-			&& ((*hostSize) * 2 < 0x01111111)) {
+			&& ((*hostSize) * 2 < 0x7FFFFFFF)) {
 			(*hostSize) *= 2;
 		}
 	}
